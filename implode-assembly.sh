@@ -4,15 +4,27 @@ output_root="$HOME/imploded_assemblies"
 mkdir -p "$output_root"
 
 suppress_output=false
+file_list=""
+combined_output=""
 
 declare -a args=()
-for arg in "$@"; do
-  case "$arg" in
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     -q|--quiet)
       suppress_output=true
+      shift
+      ;;
+    -f|--file-list)
+      file_list="$2"
+      shift 2
+      ;;
+    -c|--combined)
+      combined_output="$2"
+      shift 2
       ;;
     *)
-      args+=("$arg")
+      args+=("$1")
+      shift
       ;;
   esac
 done
@@ -75,14 +87,19 @@ implode_file() {
 
   local output_file=""
   local counter=1
-  while true; do
-    output_file="$output_subdir/${base_name}_${git_branch}_v${counter}.txt"
-    [[ ! -e "$output_file" ]] && break
-    ((counter++))
-  done
+
+  # If combined mode is enabled, skip individual file creation
+  if [[ -z "$combined_output" ]]; then
+    while true; do
+      output_file="$output_subdir/${base_name}_${git_branch}_v${counter}.txt"
+      [[ ! -e "$output_file" ]] && break
+      ((counter++))
+    done
+  fi
 
   echo "// Imploded on: $timestamp" >> "$temp_content"
   echo "// Git branch:  $git_branch" >> "$temp_content"
+  echo "// Source file: $label" >> "$temp_content"
   echo "" >> "$temp_content"
 
   while IFS= read -r line || [[ -n "$line" ]]; do
@@ -120,36 +137,109 @@ implode_file() {
   echo "" >> "$temp_final"
   cat "$temp_content" >> "$temp_final"
 
-  mv "$temp_final" "$output_file"
-  rm "$temp_content"
+  # If combined mode, append to combined file instead of creating individual file
+  if [[ -n "$combined_output" ]]; then
+    echo "" >> "$combined_output"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >> "$combined_output"
+    echo "// Assembly: $label" >> "$combined_output"
+    echo "// Imploded on: $timestamp" >> "$combined_output"
+    echo "// Git branch: $git_branch" >> "$combined_output"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" >> "$combined_output"
+    echo "" >> "$combined_output"
+    cat "$temp_final" >> "$combined_output"
+    rm "$temp_content" "$temp_final"
 
-  if [[ "$suppress_output" == false ]]; then
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo " Output file:    $output_file"
-    echo " Source:         $label"
-    echo " Timestamp:      $timestamp"
-    echo " Git branch:     $git_branch"
-    echo " Modules:        ${#included_modules[@]}"
-    for m in "${included_modules[@]}"; do echo "   • $m"; done
-    echo " Snippets:       ${#included_snippets[@]}"
-    for s in "${included_snippets[@]}"; do echo "   • $s"; done
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-  else
-    if [[ "$quiet_header_shown" != true ]]; then
-      echo "Generated files:"
-      quiet_header_shown=true
+    if [[ "$suppress_output" == false ]]; then
+      echo "Appended: $label"
     fi
-    echo "$output_file"
+  else
+    mv "$temp_final" "$output_file"
+    rm "$temp_content"
+
+    if [[ "$suppress_output" == false ]]; then
+      echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      echo " Output file:    $output_file"
+      echo " Source:         $label"
+      echo " Timestamp:      $timestamp"
+      echo " Git branch:     $git_branch"
+      echo " Modules:        ${#included_modules[@]}"
+      for m in "${included_modules[@]}"; do echo "   • $m"; done
+      echo " Snippets:       ${#included_snippets[@]}"
+      for s in "${included_snippets[@]}"; do echo "   • $s"; done
+      echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      echo ""
+    else
+      if [[ "$quiet_header_shown" != true ]]; then
+        echo "Generated files:"
+        quiet_header_shown=true
+      fi
+      echo "$output_file"
+    fi
   fi
 }
 
 # MAIN
-if [[ "${#args[@]}" -eq 0 ]]; then
-  echo "Usage: $0 [--quiet|-q] <assembly.adoc> [more_files_or_dirs...]"
+if [[ "${#args[@]}" -eq 0 && -z "$file_list" ]]; then
+  echo "Usage: $0 [--quiet|-q] [--file-list|-f <file.txt>] [--combined|-c <output.txt>] <assembly.adoc> [more_files_or_dirs...]"
+  echo ""
+  echo "Options:"
+  echo "  -q, --quiet          Suppress detailed output, show only file paths"
+  echo "  -f, --file-list      Read .adoc file paths from a text file (one per line)"
+  echo "  -c, --combined       Combine all outputs into a single file instead of individual files"
+  echo ""
+  echo "Examples:"
+  echo "  $0 assembly.adoc"
+  echo "  $0 -f filelist.txt"
+  echo "  $0 -q -f filelist.txt"
+  echo "  $0 -c combined.txt -f filelist.txt"
+  echo "  $0 --combined all_assemblies.txt file1.adoc file2.adoc directory/"
   exit 1
 fi
 
+# If combined mode is enabled, initialize the combined file
+if [[ -n "$combined_output" ]]; then
+  # Create the combined output file with header
+  timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
+  echo "// Combined Imploded Assemblies" > "$combined_output"
+  echo "// Generated on: $timestamp" >> "$combined_output"
+  echo "// This file contains multiple imploded OpenShift documentation assemblies" >> "$combined_output"
+  echo "" >> "$combined_output"
+  echo "$ai_comment_block" >> "$combined_output"
+
+  if [[ "$suppress_output" == false ]]; then
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo " Combined mode enabled"
+    echo " Output file: $combined_output"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+  fi
+fi
+
+# Process files from file list if provided
+if [[ -n "$file_list" ]]; then
+  if [[ ! -f "$file_list" ]]; then
+    echo "Error: File list '$file_list' not found"
+    exit 1
+  fi
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    # Skip empty lines and comments
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+
+    # Trim whitespace
+    file=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    [[ -z "$file" ]] && continue
+
+    if [[ -f "$file" && "$file" == *.adoc ]]; then
+      abs_path="$(cd "$(dirname "$file")" && pwd)/$(basename "$file")"
+      implode_file "$abs_path" "$file"
+    else
+      echo "Warning: Skipping invalid or non-existent file from list: $file"
+    fi
+  done < "$file_list"
+fi
+
+# Process files from command-line arguments
 for arg in "${args[@]}"; do
   if [[ -f "$arg" && "$arg" == *.adoc ]]; then
     abs_path="$(cd "$(dirname "$arg")" && pwd)/$(basename "$arg")"
@@ -164,3 +254,14 @@ for arg in "${args[@]}"; do
   fi
 
 done
+
+# If combined mode is enabled, print final summary
+if [[ -n "$combined_output" ]]; then
+  if [[ "$suppress_output" == false ]]; then
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo " Combined file created successfully"
+    echo " Output file: $combined_output"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  fi
+fi
