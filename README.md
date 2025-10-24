@@ -1,29 +1,54 @@
-# scripts
+# Assembly Implode/Explode Scripts
 
-Disclaimer: I can't fully vouch for the quality of these scripts,
-which were generated with AI chatbot assistance. If
-you are a human with feedback, feel free to ping me on 
-Slack!
+These scripts enable a workflow for preparing OpenShift AsciiDoc assemblies for DITA conversion validation and correction.
 
-I created these scripts with CCS goals in mind (such
-as performing Content Quality Assessments), and you
-are welcome to use them. 
+## Overview
 
-### important
+The workflow allows you to:
+1. **Implode** an assembly - combine all included modules/snippets into a single file
+2. **Validate** with DITA-vale or other validation tools
+3. **Edit** the combined file to fix DITA conversion issues
+4. **Explode** back to original files - extract changes to original module/snippet files
 
-This script is based on the structure of the openshift-docs
-repo. If your repo structure is different, you might need
-to make changes to your copy of the script.
+**End Goal:** Individual `.adoc` files (assemblies, modules, snippets) that are DITA-compatible and ready to commit to GitHub. The large combined file is temporary workspace only.
 
-Also, the current version of this script probably can't handle ifevals around module include statements... sorry!
+## Quick Start
 
-## implode-assembly.sh
+```bash
+# 1. Implode assembly into single file
+./implode-assembly.sh assemblies/my-assembly.adoc
 
-**implode-assembly.sh** prepares documentation for use
-with AI such as NotebookLM by "inlining" the contents
-of included modules/snippets while retaining the
-assembly context. This way, the AI can also analyze
-the markup/raw files in addition to the content.
+# 2. Validate the imploded file
+dita-vale ~/imploded_assemblies/assemblies/my-assembly_branch_v1.txt
+
+# 3. Edit the imploded file to fix issues
+code ~/imploded_assemblies/assemblies/my-assembly_branch_v1.txt
+
+# 4. Explode back to original files
+./explode-assembly.sh ~/imploded_assemblies/assemblies/my-assembly_branch_v1.txt
+
+# 5. Verify and commit DITA-ready files
+cd ~/openshift-docs
+git diff
+git add assemblies/ modules/ snippets/
+git commit -m "Fix DITA conversion issues"
+```
+
+See [WORKFLOW.md](WORKFLOW.md) for complete documentation.
+
+## Important Notes
+
+**Disclaimer:** These scripts were created with AI chatbot assistance. If you have feedback, feel free to reach out!
+
+**Requirements:**
+- Based on openshift-docs repo structure - may need modifications for other repos
+- Cannot handle ifevals around module include statements
+
+## Scripts
+
+### implode-assembly.sh
+
+Combines an assembly and all included modules/snippets into a single file for validation.
 
 _usage_
 
@@ -153,10 +178,60 @@ Examples:
   ./implode-assembly.sh --combined all_assemblies.txt file1.adoc file2.adoc directory/
 ```
 
-### Features
+**Features:**
+- Recursively inlines nested assemblies and modules
+- Multiple file processing (individual files, directories, or file lists)
+- Flexible output (individual files or combined mode)
+- Preserves context with original `include::` statements
+- Adds `// BEGIN inlined:` and `// END inlined:` markers for extraction
 
-- **Nested assembly support**: The script now recursively inlines nested assemblies and modules
-- **Multiple file processing**: Process individual files, directories, or files from a list
-- **Flexible output**: Create individual files or combine all assemblies into a single file
-- **Preserves context**: Maintains original `include::` statements alongside inlined content
-- **AI-ready format**: Optimized for analysis by AI tools like NotebookLM
+**Output Location:** `~/imploded_assemblies/`
+
+### explode-assembly.sh
+
+Reverses the implode process by extracting edited content from an imploded file back to original source files.
+
+**Usage:**
+
+```bash
+# Make the script executable
+$ chmod +x ./explode-assembly.sh
+
+# Basic usage (creates .bak backups)
+$ ./explode-assembly.sh ~/imploded_assemblies/assemblies/my-assembly_branch_v1.txt
+
+# Dry run (preview changes without writing files)
+$ ./explode-assembly.sh -n imploded_file.txt
+
+# Verbose output
+$ ./explode-assembly.sh -v imploded_file.txt
+
+# No backups
+$ ./explode-assembly.sh --no-backup imploded_file.txt
+
+# Override output directory
+$ ./explode-assembly.sh -o ~/openshift-docs imploded_file.txt
+
+# Combine options
+$ ./explode-assembly.sh -n -v imploded_file.txt
+```
+
+**Features:**
+- Parses `// BEGIN inlined:` and `// END inlined:` markers
+- Extracts content for each module/snippet
+- Handles nested includes correctly
+- Creates backups by default (`.bak` suffix)
+- Dry-run mode to preview changes
+- Reconstructs assembly file without inlined content
+
+## What You Deliver to GitHub
+
+After completing the workflow, you commit:
+- ✅ Updated `assemblies/*.adoc` files (DITA-compatible)
+- ✅ Updated `modules/*.adoc` files (DITA-compatible)
+- ✅ Updated `snippets/*.adoc` files (DITA-compatible)
+- ❌ NOT the large combined text file (temporary workspace only)
+
+## Complete Workflow Documentation
+
+For detailed workflow instructions, examples, and troubleshooting, see [WORKFLOW.md](WORKFLOW.md)
