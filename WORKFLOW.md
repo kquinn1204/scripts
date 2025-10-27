@@ -147,27 +147,27 @@ include::modules/my-module.adoc[]
 - Dry-run mode to preview changes
 - Verbose mode for detailed output
 - Reconstructs assembly file (without inlined content)
+- Preserves final newlines (POSIX text file requirement)
 
 **Usage:**
 ```bash
-# Basic usage (with backups)
-./explode-assembly.sh imploded_file.txt
-
-# Dry run (see what would happen)
-./explode-assembly.sh -n imploded_file.txt
-
-# Verbose output
-./explode-assembly.sh -v imploded_file.txt
-
-# No backups
-./explode-assembly.sh --no-backup imploded_file.txt
-
-# Override output directory
+# Basic usage for openshift-docs (REQUIRED: use -o flag)
 ./explode-assembly.sh -o ~/openshift-docs imploded_file.txt
 
+# Dry run (see what would happen)
+./explode-assembly.sh -n -o ~/openshift-docs imploded_file.txt
+
+# Verbose output
+./explode-assembly.sh -v -o ~/openshift-docs imploded_file.txt
+
+# No backups
+./explode-assembly.sh --no-backup -o ~/openshift-docs imploded_file.txt
+
 # Dry run + verbose
-./explode-assembly.sh -n -v imploded_file.txt
+./explode-assembly.sh -n -v -o ~/openshift-docs imploded_file.txt
 ```
+
+**Important for openshift-docs:** The `-o ~/openshift-docs` flag is REQUIRED because modules and snippets directories are at the repository root, not in the assembly's subdirectory. Without this flag, the script cannot locate the correct output paths.
 
 ## Complete Workflow
 
@@ -212,7 +212,7 @@ vi ~/imploded_assemblies/assemblies/my-assembly_main_v1.txt
 Before actually writing files, preview what will happen:
 
 ```bash
-./path/to/explode-assembly.sh -n -v ~/imploded_assemblies/assemblies/my-assembly_main_v1.txt
+./path/to/explode-assembly.sh -n -v -o ~/openshift-docs ~/imploded_assemblies/assemblies/my-assembly_main_v1.txt
 ```
 
 Review the output to ensure:
@@ -220,12 +220,14 @@ Review the output to ensure:
 - Paths are resolved correctly
 - Expected number of modules/snippets found
 
+**Note:** The `-o ~/openshift-docs` flag is required for the openshift-docs repository structure.
+
 ### Step 5: Explode Back to Source Files
 
 Extract the edited content back to the original files:
 
 ```bash
-./path/to/explode-assembly.sh ~/imploded_assemblies/assemblies/my-assembly_main_v1.txt
+./path/to/explode-assembly.sh -o ~/openshift-docs ~/imploded_assemblies/assemblies/my-assembly_main_v1.txt
 ```
 
 This will:
@@ -233,6 +235,8 @@ This will:
 - Write updated content to original module/snippet files
 - Update the assembly file (if edited)
 - Print summary of files processed
+
+**Important:** Always use the `-o ~/openshift-docs` flag to ensure files are written to the correct locations in the repository.
 
 ### Step 6: Verify Changes
 
@@ -336,6 +340,7 @@ If you used combined mode, you'll need to manually split the combined file back 
 - Check backup files (`.bak`) if something goes wrong
 - Run `asciibinder build` to verify syntax
 - Test documentation renders correctly
+- Note: Final newlines are automatically preserved - all files will end with `\n` per POSIX standards
 
 ### Recovery from Mistakes
 If explode produces unexpected results:
@@ -374,13 +379,31 @@ git checkout modules/my-module.adoc
 
 **Solution:** Use verbose mode (`-v`) to see what's being extracted. The script tracks depth correctly, so this is usually a marker formatting issue.
 
-### Issue: Wrong base directory
-**Cause:** Source file path in metadata doesn't match your local directory structure.
+### Issue: Wrong base directory / Files not found
+**Cause:** The explode script cannot locate modules/snippets directories. This is the expected behavior for openshift-docs repository where these directories are at the root.
 
-**Solution:** Use `-o` to override output directory:
+**Solution:** ALWAYS use `-o` flag to specify the repository root:
 ```bash
 ./explode-assembly.sh -o ~/openshift-docs imploded_file.txt
 ```
+
+This is REQUIRED for openshift-docs, not optional. The repository structure has modules/ and snippets/ at the root level, while assemblies are in subdirectories like `scalability_and_performance/`.
+
+### Issue: Files show changes but no visible diff / Missing final newlines
+**Cause:** Files are missing their final newline character, which is required by POSIX text file standards.
+
+**Background:** The explode script now automatically ensures all files end with a newline. In earlier versions, files would lose their final newline during the explode process due to bash command substitution behavior.
+
+**What this means:**
+- All text files should end with a newline character (`\n`)
+- Git may show files as changed even when content appears identical
+- Editors may warn "No newline at end of file"
+
+**Solution:** The current version of the explode script automatically handles this:
+1. Uses a sentinel technique (`$(cat file; echo x)` + `${var%x}`) to preserve newlines when reading the imploded file
+2. Automatically adds a final newline to any file that doesn't have one
+
+**If you're using an older version of the script:** Update to the latest version from the repository, which includes the final newline preservation fix.
 
 ## File Structure Reference
 
@@ -405,23 +428,35 @@ include::modules/module1.adoc[]
 ```
 
 ### Directory Structure
+
+**Imploded Files Location:**
 ```
 ~/imploded_assemblies/
-  assemblies/
+  <directory-structure-mirroring-source>/
     my-assembly_main_v1.txt
     my-assembly_main_v2.txt
-  modules/
-    [if processing modules directly]
+```
 
-~/openshift-docs/
-  assemblies/
-    my-assembly.adoc
-  modules/
+**OpenShift-Docs Repository Structure:**
+```
+~/openshift-docs/                    ← Use this path with -o flag
+  modules/                           ← At repository root
     module1.adoc
     module2.adoc
-  snippets/
+    cnf-about-*.adoc
+    [thousands of module files]
+  snippets/                          ← At repository root
     snippet1.adoc
+  scalability_and_performance/       ← Assemblies in subdirectories
+    cnf-tuning-low-latency-nodes-with-perf-profile.adoc
+  networking/
+    assembly-file.adoc
+  [other topic directories with assemblies]
 ```
+
+**Why `-o ~/openshift-docs` is Required:**
+
+The openshift-docs repository has a flat structure where ALL modules and snippets are in top-level directories (`modules/` and `snippets/`), while assemblies are organized in topic-specific subdirectories. When exploding an assembly from `scalability_and_performance/`, the script must write modules to `~/openshift-docs/modules/`, not `~/openshift-docs/scalability_and_performance/modules/`. The `-o` flag tells the script to use the repository root as the base path.
 
 ## Advanced Usage
 

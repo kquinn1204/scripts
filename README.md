@@ -24,8 +24,8 @@ dita-vale ~/imploded_assemblies/assemblies/my-assembly_branch_v1.txt
 # 3. Edit the imploded file to fix issues
 code ~/imploded_assemblies/assemblies/my-assembly_branch_v1.txt
 
-# 4. Explode back to original files
-./explode-assembly.sh ~/imploded_assemblies/assemblies/my-assembly_branch_v1.txt
+# 4. Explode back to original files (requires -o for openshift-docs repo)
+./explode-assembly.sh -o ~/openshift-docs ~/imploded_assemblies/assemblies/my-assembly_branch_v1.txt
 
 # 5. Verify and commit DITA-ready files
 cd ~/openshift-docs
@@ -197,24 +197,23 @@ Reverses the implode process by extracting edited content from an imploded file 
 # Make the script executable
 $ chmod +x ./explode-assembly.sh
 
-# Basic usage (creates .bak backups)
-$ ./explode-assembly.sh ~/imploded_assemblies/assemblies/my-assembly_branch_v1.txt
+# Basic usage for openshift-docs (REQUIRED: use -o flag)
+$ ./explode-assembly.sh -o ~/openshift-docs ~/imploded_assemblies/assemblies/my-assembly_branch_v1.txt
 
 # Dry run (preview changes without writing files)
-$ ./explode-assembly.sh -n imploded_file.txt
+$ ./explode-assembly.sh -n -o ~/openshift-docs imploded_file.txt
 
 # Verbose output
-$ ./explode-assembly.sh -v imploded_file.txt
+$ ./explode-assembly.sh -v -o ~/openshift-docs imploded_file.txt
 
 # No backups
-$ ./explode-assembly.sh --no-backup imploded_file.txt
+$ ./explode-assembly.sh --no-backup -o ~/openshift-docs imploded_file.txt
 
-# Override output directory
-$ ./explode-assembly.sh -o ~/openshift-docs imploded_file.txt
-
-# Combine options
-$ ./explode-assembly.sh -n -v imploded_file.txt
+# Combine options (dry run + verbose)
+$ ./explode-assembly.sh -n -v -o ~/openshift-docs imploded_file.txt
 ```
+
+**Important for openshift-docs:** The `-o ~/openshift-docs` flag is REQUIRED because modules and snippets directories are at the repository root, not in the assembly's subdirectory. Without this flag, the script cannot locate the correct output paths.
 
 **Features:**
 - Parses `// BEGIN inlined:` and `// END inlined:` markers
@@ -223,6 +222,7 @@ $ ./explode-assembly.sh -n -v imploded_file.txt
 - Creates backups by default (`.bak` suffix)
 - Dry-run mode to preview changes
 - Reconstructs assembly file without inlined content
+- Preserves final newlines (POSIX text file requirement)
 
 ## What You Deliver to GitHub
 
@@ -231,6 +231,21 @@ After completing the workflow, you commit:
 - ✅ Updated `modules/*.adoc` files (DITA-compatible)
 - ✅ Updated `snippets/*.adoc` files (DITA-compatible)
 - ❌ NOT the large combined text file (temporary workspace only)
+
+## Technical Notes
+
+### Final Newline Preservation
+
+The explode script ensures all output files end with a newline character, which is a POSIX requirement for text files. This is achieved through:
+
+1. **Sentinel technique for reading files**: When loading the imploded file, the script uses `$(cat file; echo x)` followed by `${var%x}` to preserve trailing newlines that would otherwise be stripped by command substitution.
+
+2. **Final newline enforcement**: Before writing each file, the script checks if the content ends with a newline and adds one if missing.
+
+This ensures:
+- Files comply with POSIX text file standards
+- No spurious "No newline at end of file" warnings from editors or git
+- Consistent file endings across all extracted modules and snippets
 
 ## Complete Workflow Documentation
 

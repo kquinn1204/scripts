@@ -164,7 +164,7 @@ extract_file_content() {
     fi
   done <<< "$input_content"
 
-  echo -n "$result"
+  printf '%s' "$result"
 }
 
 # Find all unique module and snippet paths in the imploded file
@@ -226,7 +226,7 @@ extract_assembly_content() {
     fi
   done <<< "$input_content"
 
-  echo -n "$result"
+  printf '%s' "$result"
 }
 
 # Main processing
@@ -257,8 +257,10 @@ fi
 
 echo ""
 
-# Read entire imploded file
-imploded_content=$(<"$imploded_file")
+# Read entire imploded file (preserving final newline)
+# Note: Command substitution strips trailing newlines, so we add a sentinel
+imploded_content=$(cat "$imploded_file"; echo x)
+imploded_content="${imploded_content%x}"
 
 # Find all modules and snippets
 echo "Finding included files..."
@@ -274,9 +276,10 @@ fi
 # Extract and write each module/snippet
 file_count=0
 while IFS= read -r file_path; do
-  [[ -z "$file_path" ]] && continue
+  # Skip empty lines
+  [[ -n "$file_path" ]] || continue
 
-  ((file_count++))
+  file_count=$((file_count + 1))
 
   output_path="$base_dir/$file_path"
   output_dir=$(dirname "$output_path")
@@ -308,7 +311,11 @@ while IFS= read -r file_path; do
 
   # Write the file
   if [[ "$dry_run" == false ]]; then
-    echo -n "$content" > "$output_path"
+    # Ensure content ends with a newline (POSIX requirement for text files)
+    if [[ -n "$content" && "${content: -1}" != $'\n' ]]; then
+      content+=$'\n'
+    fi
+    printf '%s' "$content" > "$output_path"
     echo "  ✓ Written: $output_path"
   else
     echo "  [DRY RUN] Would write: $output_path"
@@ -324,7 +331,23 @@ done <<< "$included_files"
 echo ""
 echo "Processing assembly file..."
 assembly_content=$(extract_assembly_content "$imploded_content")
-assembly_path="$base_dir/$source_file"
+
+# Handle assembly path correctly
+if [[ "$source_file" == /* ]]; then
+  # source_file is absolute path
+  if [[ -n "$output_base_dir" ]]; then
+    # Extract relative path from source_file by removing the common prefix
+    # Find the openshift-docs (or similar) directory and use everything after it
+    relative_source=$(echo "$source_file" | sed "s|^$base_dir/||")
+    assembly_path="$base_dir/$relative_source"
+  else
+    assembly_path="$source_file"
+  fi
+else
+  # source_file is relative path
+  assembly_path="$base_dir/$source_file"
+fi
+
 assembly_dir=$(dirname "$assembly_path")
 
 if [[ "$dry_run" == false ]]; then
@@ -339,7 +362,11 @@ if [[ -f "$assembly_path" ]] && [[ "$create_backups" == true ]] && [[ "$dry_run"
 fi
 
 if [[ "$dry_run" == false ]]; then
-  echo -n "$assembly_content" > "$assembly_path"
+  # Ensure content ends with a newline (POSIX requirement for text files)
+  if [[ -n "$assembly_content" && "${assembly_content: -1}" != $'\n' ]]; then
+    assembly_content+=$'\n'
+  fi
+  printf '%s' "$assembly_content" > "$assembly_path"
   echo "  ✓ Written: $assembly_path"
 else
   echo "  [DRY RUN] Would write: $assembly_path"
